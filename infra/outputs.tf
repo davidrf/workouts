@@ -15,3 +15,11 @@ output "acm_certificate_arn_us_east" {
 output "acm_certificate_arn" {
   value = data.terraform_remote_state.infra_shared.outputs.primary_acm_certificate_arn
 }
+
+output "dynamodb_table_name" {
+  value = aws_dynamodb_table.workouts.name
+}
+
+output "photos_bucket_name" {
+  value = aws_s3_bucket.photos.id
+}

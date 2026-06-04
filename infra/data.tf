@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 data "terraform_remote_state" "infra_shared" {
   backend = "s3"
 
