@@ -1,36 +1,37 @@
 # workouts
 
-A site for logging workouts, served at `workouts.davidrstudios.com`.
+Personal workout-logging web app at **[workouts.davidrstudios.com](https://workouts.davidrstudios.com)**.
 
-## Infrastructure
+Log whiteboard workouts: date, name, photos, details, and recommended weights.
 
-Terraform lives in `infra/`. It consumes shared resources from the `infra-shared`
-project via remote state rather than redefining them:
+## Stack
 
-- **TLS** — the wildcard cert `*.davidrstudios.com` (us-east-1 + us-west-2) is managed in
-  `infra-shared` and exposed as `acm_certificate_arn_us_east` / `acm_certificate_arn`.
-- **DNS zone** — the `davidrstudios.com` Route 53 zone id is exposed as `primary_zone_id`.
+- **Frontend/backend**: Server-rendered HTML from a single Node 20 Lambda function
+- **Edge**: CloudFront + CloudFront Function (HTTP Basic Auth)
+- **API**: API Gateway HTTP API → Lambda
+- **Database**: DynamoDB (on-demand, PITR enabled)
+- **Photos**: Direct browser → S3 via presigned PUT URLs; served via CloudFront OAC
+- **Infra**: Terraform (us-west-2); state in S3
 
-This repo owns its own Terraform state backend (`workouts-terraform-state` S3 bucket +
-`workouts-terraform-locks` DynamoDB table) and will own its own app resources and the
-`workouts.davidrstudios.com` DNS record.
+No frameworks, no build step, no always-on servers. ~$0/month at personal scale.
 
-### Status
+## Features
 
-- [x] State backend + remote-state wiring to `infra-shared`
-- [ ] Hosting (S3 + CloudFront, or other) — not yet set up
-- [ ] `workouts.davidrstudios.com` Route 53 record — scaffolded but commented out in
-  `infra/route53.tf` until a hosting target exists
+- Add workouts with photos, date, name, details, and recommended weights
+- Index listing (newest first) with links to detail pages
+- Photos stored privately in S3 and served through CloudFront
+- HTTP Basic Auth at the edge (CloudFront Function + KeyValueStore)
 
-## Running Terraform
+## Development
 
-Authenticate once per session via AWS SSO, then run Terraform directly:
+See [CLAUDE.md](CLAUDE.md) for architecture details, infra file layout, DynamoDB schema,
+and instructions for updating the Basic Auth password.
 
 ```bash
+# Deploy infra + app changes
 aws sso login --profile admin
+cd infra && AWS_PROFILE=admin terraform apply
 
-cd infra
-AWS_PROFILE=admin terraform init
-AWS_PROFILE=admin terraform plan
-AWS_PROFILE=admin terraform apply
+# App code lives in app/index.mjs — no build step needed
+# Terraform zips app/ and uploads on every apply when the code hash changes
 ```
