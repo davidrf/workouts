@@ -19,20 +19,25 @@ export const handler = async (event) => {
     return html(403, '<p>Forbidden</p>');
   }
 
-  const method = event.requestContext.http.method;
-  const path = event.rawPath;
+  try {
+    const method = event.requestContext.http.method;
+    const path = event.rawPath;
 
-  if (method === 'GET'  && path === '/')              return handleIndex();
-  if (method === 'GET'  && path === '/workouts/new')  return handleNew();
-  if (method === 'POST' && path === '/api/uploads')   return handleUploads(event);
-  if (method === 'POST' && path === '/workouts')      return handleCreate(event);
+    if (method === 'GET'  && path === '/')              return handleIndex();
+    if (method === 'GET'  && path === '/workouts/new')  return handleNew();
+    if (method === 'POST' && path === '/api/uploads')   return handleUploads(event);
+    if (method === 'POST' && path === '/workouts')      return handleCreate(event);
 
-  if (method === 'GET' && path.startsWith('/workouts/')) {
-    const id = path.split('/')[2];
-    if (id) return handleDetail(id);
+    if (method === 'GET' && path.startsWith('/workouts/')) {
+      const id = path.split('/')[2];
+      if (id) return handleDetail(id);
+    }
+
+    return html(404, '<p>Not found.</p>');
+  } catch (err) {
+    console.error(err);
+    return html(500, '<p>Something went wrong. <a href="/">Back</a></p>');
   }
-
-  return html(404, '<p>Not found.</p>');
 };
 
 // ── Read path ────────────────────────────────────────────────────────────────
@@ -60,7 +65,7 @@ async function handleIndex() {
       <h1>Workouts</h1>
       <a href="/workouts/new" class="btn">+ Add workout</a>
     </div>
-    ${body}`);
+    ${body}`, 'Workouts');
 }
 
 async function handleDetail(id) {
@@ -86,13 +91,15 @@ async function handleDetail(id) {
     ? `<h2>Recommended weights</h2><pre>${esc(w.recommended_weights)}</pre>`
     : '';
 
+  const pageTitle = `${esc(w.name || w.workout_date)} – Workouts`;
+
   return html(200, `
     <a href="/" class="back">← All workouts</a>
     ${w.name ? `<h1>${esc(w.name)}</h1>` : ''}
     <p class="date">${esc(w.workout_date)}</p>
     ${photos ? `<div class="photos">${photos}</div>` : ''}
     ${details}
-    ${weights}`);
+    ${weights}`, pageTitle);
 }
 
 // ── Write path ───────────────────────────────────────────────────────────────
@@ -174,7 +181,7 @@ function handleNew() {
         status.textContent = 'Saving…';
         form.submit();
       });
-    </script>`);
+    </script>`, 'Add workout – Workouts');
 }
 
 async function handleUploads(event) {
@@ -258,7 +265,7 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
-function html(statusCode, body) {
+function html(statusCode, body, title = 'Workouts') {
   return {
     statusCode,
     headers: { 'content-type': 'text/html; charset=utf-8' },
@@ -267,7 +274,7 @@ function html(statusCode, body) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Workouts</title>
+  <title>${title}</title>
   <style>
     body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; color: #222; }
     a { color: #0070f3; }

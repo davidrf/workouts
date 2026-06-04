@@ -62,6 +62,7 @@ resource "aws_lambda_function" "app" {
   role             = aws_iam_role.app.arn
   filename         = data.archive_file.app.output_path
   source_code_hash = data.archive_file.app.output_base64sha256
+  timeout          = 29
 
   environment {
     variables = {
