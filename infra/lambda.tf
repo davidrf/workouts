@@ -65,10 +65,11 @@ resource "aws_lambda_function" "app" {
 
   environment {
     variables = {
-      TABLE_NAME    = aws_dynamodb_table.workouts.name
-      GSI_NAME      = "id-index"
-      PHOTOS_BUCKET = aws_s3_bucket.photos.id
-      SITE_ORIGIN   = "https://${var.subdomain}"
+      TABLE_NAME           = aws_dynamodb_table.workouts.name
+      GSI_NAME             = "id-index"
+      PHOTOS_BUCKET        = aws_s3_bucket.photos.id
+      SITE_ORIGIN          = "https://${var.subdomain}"
+      ORIGIN_VERIFY_SECRET = random_password.origin_verify.result
     }
   }
 
@@ -82,7 +83,3 @@ resource "aws_lambda_function" "app" {
   tags = var.tags
 }
 
-resource "aws_lambda_function_url" "app" {
-  function_name      = aws_lambda_function.app.function_name
-  authorization_type = "AWS_IAM"
-}

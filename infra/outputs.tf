@@ -24,6 +24,18 @@ output "photos_bucket_name" {
   value = aws_s3_bucket.photos.id
 }
 
-output "lambda_function_url" {
-  value = aws_lambda_function_url.app.function_url
+output "apigateway_endpoint" {
+  value = aws_apigatewayv2_api.app.api_endpoint
+}
+
+output "cloudfront_domain_name" {
+  value = aws_cloudfront_distribution.site.domain_name
+}
+
+output "cloudfront_distribution_id" {
+  value = aws_cloudfront_distribution.site.id
+}
+
+output "kvs_arn" {
+  value = aws_cloudfront_key_value_store.basic_auth.arn
 }
