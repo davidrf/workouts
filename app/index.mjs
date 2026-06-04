@@ -1,5 +1,5 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, QueryCommand, PutCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { S3Client } from '@aws-sdk/client-s3';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -28,9 +28,12 @@ export const handler = async (event) => {
     if (method === 'POST' && path === '/api/uploads')   return handleUploads(event);
     if (method === 'POST' && path === '/workouts')      return handleCreate(event);
 
-    if (method === 'GET' && path.startsWith('/workouts/')) {
-      const id = path.split('/')[2];
-      if (id) return handleDetail(id);
+    if (path.startsWith('/workouts/')) {
+      const parts = path.split('/');
+      const id = parts[2];
+      if (method === 'GET'  && id && parts[3] === 'edit') return handleEdit(id);
+      if (method === 'GET'  && id)                        return handleDetail(id);
+      if (method === 'POST' && id)                        return handleUpdate(event, id);
     }
 
     return html(404, '<p>Not found.</p>');
@@ -94,7 +97,10 @@ async function handleDetail(id) {
   const pageTitle = `${esc(w.name || w.workout_date)} – Workouts`;
 
   return html(200, `
-    <a href="/" class="back">← All workouts</a>
+    <div class="header">
+      <a href="/" class="back">← All workouts</a>
+      <a href="/workouts/${esc(w.id)}/edit" class="btn btn-sm">Edit</a>
+    </div>
     ${w.name ? `<h1>${esc(w.name)}</h1>` : ''}
     <p class="date">${esc(w.workout_date)}</p>
     ${photos ? `<div class="photos">${photos}</div>` : ''}
@@ -255,6 +261,161 @@ async function handleCreate(event) {
   return { statusCode: 302, headers: { location: `/workouts/${id}` }, body: '' };
 }
 
+async function handleEdit(id) {
+  const result = await dynamo.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    IndexName: GSI_NAME,
+    KeyConditionExpression: 'id = :id',
+    ExpressionAttributeValues: { ':id': id },
+  }));
+
+  const w = result.Items?.[0];
+  if (!w) return html(404, '<p>Workout not found. <a href="/">Back</a></p>');
+
+  const existingPhotos = (w.photo_keys ?? []).map(key => `
+    <div class="existing-photo-item">
+      <img src="/${esc(key)}" alt="Workout photo" class="photo-thumb">
+      <label class="remove-label">
+        <input type="checkbox" class="keep-photo" value="${esc(key)}" checked>
+        Keep
+      </label>
+    </div>`).join('');
+
+  const pageTitle = `Edit ${esc(w.name || w.workout_date)} – Workouts`;
+
+  return html(200, `
+    <a href="/workouts/${esc(w.id)}" class="back">← Back</a>
+    <h1>Edit workout</h1>
+    <form id="workout-form" method="post" action="/workouts/${esc(w.id)}">
+      <div class="field">
+        <label for="workout_date">Date <span class="req">*</span></label>
+        <input type="date" id="workout_date" name="workout_date" required value="${esc(w.workout_date)}">
+      </div>
+      <div class="field">
+        <label for="name">Name</label>
+        <input type="text" id="name" name="name" placeholder="e.g. Hero WOD" value="${esc(w.name ?? '')}">
+      </div>
+      ${existingPhotos ? `<div class="field">
+        <label>Existing photos</label>
+        <div class="existing-photos">${existingPhotos}</div>
+      </div>` : ''}
+      <div class="field">
+        <label for="photos">Add photos</label>
+        <input type="file" id="photos" name="photos" multiple accept="image/*">
+      </div>
+      <div class="field">
+        <label for="details">Details</label>
+        <textarea id="details" name="details" rows="4" placeholder="5 rounds: 10 pull-ups…">${esc(w.details ?? '')}</textarea>
+      </div>
+      <div class="field">
+        <label for="recommended_weights">Recommended weights</label>
+        <textarea id="recommended_weights" name="recommended_weights" rows="3" placeholder="KB: 24kg / 16kg">${esc(w.recommended_weights ?? '')}</textarea>
+      </div>
+      <button type="submit" class="btn" id="submit-btn">Save changes</button>
+      <span id="upload-status"></span>
+    </form>
+    <script>
+      function addHidden(form, name, value) {
+        const el = document.createElement('input');
+        el.type = 'hidden'; el.name = name; el.value = value;
+        form.appendChild(el);
+      }
+
+      document.getElementById('workout-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const form = e.target;
+        const btn = document.getElementById('submit-btn');
+        const status = document.getElementById('upload-status');
+        const files = Array.from(document.getElementById('photos').files);
+
+        btn.disabled = true;
+
+        // Carry over kept existing photos
+        document.querySelectorAll('.keep-photo:checked').forEach(cb => {
+          addHidden(form, 'photo_keys', cb.value);
+        });
+
+        if (files.length) {
+          status.textContent = 'Uploading photos…';
+          try {
+            const res = await fetch('/api/uploads', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify(files.map(f => ({
+                filename: f.name,
+                contentType: f.type || 'image/jpeg',
+              }))),
+            });
+            if (!res.ok) throw new Error('Upload init failed');
+            const { uploads } = await res.json();
+            await Promise.all(uploads.map((u, i) =>
+              fetch(u.url, {
+                method: 'PUT',
+                headers: { 'content-type': files[i].type || 'image/jpeg' },
+                body: files[i],
+              })
+            ));
+            uploads.forEach(u => addHidden(form, 'photo_keys', u.key));
+          } catch (err) {
+            status.textContent = 'Upload failed. Try again.';
+            btn.disabled = false;
+            return;
+          }
+        }
+
+        status.textContent = 'Saving…';
+        form.submit();
+      });
+    </script>`, pageTitle);
+}
+
+async function handleUpdate(event, id) {
+  const existing = await dynamo.send(new QueryCommand({
+    TableName: TABLE_NAME,
+    IndexName: GSI_NAME,
+    KeyConditionExpression: 'id = :id',
+    ExpressionAttributeValues: { ':id': id },
+  }));
+
+  const w = existing.Items?.[0];
+  if (!w) return html(404, '<p>Workout not found. <a href="/">Back</a></p>');
+
+  const raw = event.isBase64Encoded
+    ? Buffer.from(event.body ?? '', 'base64').toString()
+    : (event.body ?? '');
+  const params = new URLSearchParams(raw);
+
+  const workout_date = params.get('workout_date') ?? '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(workout_date)) {
+    return html(400, `<p>Invalid or missing workout date. <a href="/workouts/${esc(id)}/edit">Back</a></p>`);
+  }
+
+  const name               = params.get('name')?.trim()                || undefined;
+  const details            = params.get('details')?.trim()             || undefined;
+  const recommended_weights = params.get('recommended_weights')?.trim() || undefined;
+  const photo_keys         = params.getAll('photo_keys').filter(Boolean);
+
+  const newSk = `${workout_date}#${id}`;
+  const item = {
+    pk: 'WORKOUT',
+    sk: newSk,
+    id,
+    workout_date,
+    created_at: w.created_at,
+    photo_keys,
+  };
+  if (name)                item.name = name;
+  if (details)             item.details = details;
+  if (recommended_weights) item.recommended_weights = recommended_weights;
+
+  if (newSk !== w.sk) {
+    await dynamo.send(new DeleteCommand({ TableName: TABLE_NAME, Key: { pk: w.pk, sk: w.sk } }));
+  }
+  await dynamo.send(new PutCommand({ TableName: TABLE_NAME, Item: item }));
+
+  return { statusCode: 302, headers: { location: `/workouts/${id}` }, body: '' };
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function esc(s) {
@@ -296,6 +457,11 @@ function html(statusCode, body, title = 'Workouts') {
     input[type=text], input[type=date], textarea { padding: .4rem .6rem; border: 1px solid #ccc; border-radius: 6px; font: inherit; width: 100%; box-sizing: border-box; }
     textarea { resize: vertical; }
     #upload-status { font-size: .85rem; color: #666; margin-left: .8rem; }
+    .btn-sm { font-size: .8rem; padding: .3rem .7rem; }
+    .existing-photos { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: .4rem; }
+    .existing-photo-item { display: flex; flex-direction: column; align-items: center; gap: .3rem; font-size: .8rem; }
+    .photo-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; }
+    .remove-label { display: flex; align-items: center; gap: .25rem; cursor: pointer; color: #c00; }
   </style>
 </head>
 <body>
