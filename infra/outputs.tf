@@ -23,3 +23,7 @@ output "dynamodb_table_name" {
 output "photos_bucket_name" {
   value = aws_s3_bucket.photos.id
 }
+
+output "lambda_function_url" {
+  value = aws_lambda_function_url.app.function_url
+}
