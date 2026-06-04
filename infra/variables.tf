@@ -10,6 +10,10 @@ variable "subdomain" {
   default = "workouts.davidrstudios.com"
 }
 
+variable "basic_auth_username" {
+  default = "david"
+}
+
 variable "tags" {
   type = map(string)
   default = {

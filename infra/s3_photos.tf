@@ -32,6 +32,19 @@ resource "aws_s3_bucket_versioning" "photos" {
   }
 }
 
-# TODO (Phase 3): add aws_s3_bucket_policy allowing s3:GetObject only from
-# aws_cloudfront_distribution.site (OAC). Requires the CloudFront ARN which
-# doesn't exist until cloudfront.tf is created.
+resource "aws_s3_bucket_policy" "photos" {
+  bucket = aws_s3_bucket.photos.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "cloudfront.amazonaws.com" }
+      Action    = "s3:GetObject"
+      Resource  = "${aws_s3_bucket.photos.arn}/*"
+      Condition = {
+        StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.site.arn }
+      }
+    }]
+  })
+}
