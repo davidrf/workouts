@@ -29,7 +29,7 @@ resource "aws_iam_role_policy" "app" {
     Statement = [
       {
         Effect = "Allow"
-        Action = ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:PutItem"]
+        Action = ["dynamodb:Query", "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource = [
           aws_dynamodb_table.workouts.arn,
           "${aws_dynamodb_table.workouts.arn}/index/id-index",
